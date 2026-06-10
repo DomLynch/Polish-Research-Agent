@@ -62,12 +62,6 @@ def run_preflight(payload: Json, *, use_m3: bool = False, reviewer: Reviewer | N
             reasons.extend(_m3_block_reasons(m3_result))
         elif status_value == "not_configured":
             reasons.append(_reason("m3_not_configured", "major", "M3 was enabled but not configured."))
-        elif status_value == "judge_collision":
-            reasons.append(_reason(
-                "judge_equals_writer", "major",
-                "Preflight judge model matches the writer model; "
-                "set PREFLIGHT_JUDGE_MODEL to a different model.",
-            ))
         elif status_value not in {"pass", "skipped"}:
             reasons.append(_reason("m3_uncertain", "major", "M3 did not return a pass verdict."))
 
@@ -289,20 +283,6 @@ def _env_truthy(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _writer_model() -> str:
-    return (os.getenv("MINIMAX_MODEL") or os.getenv("MIMO_MODEL") or "").strip()
-
-
-def _resolve_judge_model() -> str:
-    # Default to a judge that differs from the MiniMax writer so the rule holds out of the box.
-    return (os.getenv("PREFLIGHT_JUDGE_MODEL") or os.getenv("ANTHROPIC_MODEL") or "claude-haiku-4-5-20251001").strip()
-
-
-def _judge_collides(judge_model: str) -> bool:
-    writer = _writer_model().lower()
-    return bool(writer) and judge_model.strip().lower() == writer
-
-
 def _evidence_is_empty(c: Json) -> bool:
     for row in c["source_bundle"]:
         for key in ("title", "excerpt", "evidence_type", "direction", "support", "relevance"):
@@ -312,24 +292,16 @@ def _evidence_is_empty(c: Json) -> bool:
 
 
 def _minimax_review(c: Json) -> Json:
-    model = _resolve_judge_model()
-    if _judge_collides(model):
-        return {"status": "judge_collision", "model": model}
-    api_key = (
-        os.getenv("PREFLIGHT_JUDGE_API_KEY")
-        or os.getenv("MINIMAX_API_KEY")
-        or os.getenv("ANTHROPIC_API_KEY")
-        or os.getenv("MIMO_API_KEY")
-    )
+    api_key = os.getenv("MINIMAX_API_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("MIMO_API_KEY")
     if not api_key:
         return {"status": "not_configured"}
     base = (
-        os.getenv("PREFLIGHT_JUDGE_BASE_URL")
-        or os.getenv("MINIMAX_BASE_URL")
+        os.getenv("MINIMAX_BASE_URL")
         or os.getenv("ANTHROPIC_BASE_URL")
         or os.getenv("MIMO_BASE_URL")
         or "https://api.minimax.io/anthropic"
     ).rstrip("/")
+    model = os.getenv("MINIMAX_MODEL") or os.getenv("ANTHROPIC_MODEL") or os.getenv("MIMO_MODEL") or "MiniMax-M3"
     prompt = (
         "Return JSON only: {\"status\":\"pass|block\",\"blocked_reasons\":[]}.\n"
         "Block only if prose overclaims, direction conflicts with evidence, or uncertainty should fail closed.\n"

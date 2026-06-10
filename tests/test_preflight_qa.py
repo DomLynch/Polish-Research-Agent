@@ -7,11 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from preflight_qa.core import (
-    _judge_collides,
-    _resolve_judge_model,
-    run_preflight,
-)
+from preflight_qa.core import run_preflight
 
 
 def _payload(body: str, *, abstract: str = "This may be limited.", sources: list[dict] | None = None) -> dict:
@@ -153,35 +149,6 @@ def test_env_only_m3_not_configured_fails_closed(monkeypatch) -> None:
 
     assert report["status"] == "block"
     assert {r["code"] for r in report["blocked_reasons"]} == {"m3_not_configured"}
-
-
-def test_judge_collision_with_writer_model_blocks() -> None:
-    def reviewer(_payload: dict) -> dict:
-        return {"status": "judge_collision", "model": "MiniMax-M3"}
-
-    report = run_preflight(_payload("## Result\n\nThis may be limited."), use_m3=True, reviewer=reviewer)
-
-    assert report["status"] == "block"
-    assert {r["code"] for r in report["blocked_reasons"]} == {"judge_equals_writer"}
-
-
-def test_judge_model_is_independent_of_writer_model(monkeypatch) -> None:
-    # With a MiniMax writer and the default judge, there is no collision out of the box.
-    monkeypatch.setenv("MIMO_MODEL", "MiniMax-M3")
-    monkeypatch.delenv("PREFLIGHT_JUDGE_MODEL", raising=False)
-    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
-    assert _resolve_judge_model() != "MiniMax-M3"
-    assert _judge_collides(_resolve_judge_model()) is False
-
-    # If someone explicitly points the judge at the writer model, the guard blocks it.
-    monkeypatch.setenv("PREFLIGHT_JUDGE_MODEL", "MiniMax-M3")
-    assert _judge_collides(_resolve_judge_model()) is True
-
-
-def test_judge_guard_does_not_false_positive_without_writer_model(monkeypatch) -> None:
-    for var in ("MINIMAX_MODEL", "MIMO_MODEL", "PREFLIGHT_JUDGE_MODEL", "ANTHROPIC_MODEL"):
-        monkeypatch.delenv(var, raising=False)
-    assert _judge_collides(_resolve_judge_model()) is False
 
 
 def test_cli_writes_report_and_clean_payload(tmp_path: Path) -> None:

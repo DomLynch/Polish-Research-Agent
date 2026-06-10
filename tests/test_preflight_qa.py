@@ -69,6 +69,35 @@ def test_m3_can_add_block_but_not_needed_for_pass() -> None:
     assert "m3_overclaim" in {r["code"] for r in report["blocked_reasons"]}
 
 
+def test_m3_string_block_reason_fails_closed() -> None:
+    def reviewer(_payload: dict) -> dict:
+        return {
+            "status": "block",
+            "blocked_reasons": ["overclaim: cures Alzheimer's in humans"],
+        }
+
+    report = run_preflight(_payload("## Result\n\nThis may be limited."), use_m3=True, reviewer=reviewer)
+
+    assert report["status"] == "block"
+    assert report["blocked_reasons"] == [{
+        "code": "m3_block",
+        "severity": "major",
+        "message": "overclaim: cures Alzheimer's in humans",
+        "source": "m3",
+    }]
+
+
+def test_m3_block_without_reasons_fails_closed() -> None:
+    def reviewer(_payload: dict) -> dict:
+        return {"status": "block", "blocked_reasons": []}
+
+    report = run_preflight(_payload("## Result\n\nThis may be limited."), use_m3=True, reviewer=reviewer)
+
+    assert report["status"] == "block"
+    assert report["blocked_reasons"][0]["code"] == "m3_block"
+    assert report["blocked_reasons"][0]["source"] == "m3"
+
+
 def test_cli_writes_report_and_clean_payload(tmp_path: Path) -> None:
     src = tmp_path / "input.json"
     report = tmp_path / "report.json"

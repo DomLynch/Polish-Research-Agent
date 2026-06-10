@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -170,6 +172,67 @@ def test_env_only_m3_without_key_uses_real_not_configured_path(monkeypatch) -> N
     assert report["status"] == "pass"
     assert report["m3_result"]["status"] == "not_configured"
     assert "m3_not_configured" in _advisory_codes(report)
+
+
+def test_cli_use_m3_without_key_records_not_configured_advisory(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("MIMO_API_KEY", raising=False)
+    src = tmp_path / "input.json"
+    report = tmp_path / "report.json"
+    src.write_text(json.dumps(_payload("## Result\n\nThis may be limited.")), encoding="utf-8")
+    env = os.environ.copy()
+    for name in ("MINIMAX_API_KEY", "ANTHROPIC_API_KEY", "MIMO_API_KEY", "PREFLIGHT_USE_M3"):
+        env.pop(name, None)
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "preflight_qa", "check", "--use-m3", "--input", str(src), "--out", str(report)],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+
+    data = json.loads(report.read_text())
+    assert proc.returncode == 0, proc.stderr
+    assert data["status"] == "pass"
+    assert data["m3_result"]["status"] == "not_configured"
+    assert "m3_not_configured" in {row["code"] for row in data["advisories"]}
+
+
+def test_minimax_is_default_advisory_reviewer_model(monkeypatch) -> None:
+    class FakeResponse:
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps({
+                "content": [{"text": "{\"status\":\"pass\",\"blocked_reasons\":[]}"}],
+            }).encode("utf-8")
+
+    requests = []
+
+    def fake_urlopen(req: urllib.request.Request, timeout: int) -> FakeResponse:
+        requests.append((req, timeout))
+        return FakeResponse()
+
+    monkeypatch.setenv("MINIMAX_API_KEY", "test-key")
+    monkeypatch.delenv("MINIMAX_MODEL", raising=False)
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    monkeypatch.delenv("MIMO_MODEL", raising=False)
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    report = run_preflight(_payload("## Result\n\nThis may be limited."), use_m3=True)
+
+    assert report["status"] == "pass"
+    assert report["m3_result"]["model"] == "MiniMax-M3"
+    assert report["m3_result"]["status"] == "pass"
+    assert report["advisories"] == []
+    assert requests
 
 
 def test_cleaning_reverts_to_original_when_invariant_trips() -> None:

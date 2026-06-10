@@ -43,11 +43,8 @@ HEDGE_TERMS = (
 )
 
 
-# Improve-only gate: the only hard blocks are fabricated citations.
-# Everything else is reported as an advisory and never stops submission.
-HARD_BLOCK_CODES = {"doi_not_in_source_bundle", "pmid_not_in_source_bundle"}
-
-
+# Advisory-only: this layer never blocks. Producer checks and Researka
+# platform review own rejection; everything found here is an advisory.
 def run_preflight(payload: Json, *, use_m3: bool = False, reviewer: Reviewer | None = None) -> Json:
     before = json.loads(json.dumps(payload))
     canonical = _canonical(payload)
@@ -68,12 +65,10 @@ def run_preflight(payload: Json, *, use_m3: bool = False, reviewer: Reviewer | N
             "Safe fixes were reverted because cleaning altered protected content.",
         ))
 
-    deterministic_reasons = _deterministic_blocks(cleaned_canonical)
-    reasons = [r for r in deterministic_reasons if r["code"] in HARD_BLOCK_CODES]
-    advisories.extend(r for r in deterministic_reasons if r["code"] not in HARD_BLOCK_CODES)
+    advisories.extend(_deterministic_blocks(cleaned_canonical))
 
     m3_result: Json = {"status": "skipped"}
-    if not reasons and (use_m3 or _env_truthy("PREFLIGHT_USE_M3")):
+    if use_m3 or _env_truthy("PREFLIGHT_USE_M3"):
         m3_result = reviewer(cleaned_canonical) if reviewer else _minimax_review(cleaned_canonical)
         status_value = m3_result.get("status")
         if status_value == "block":
@@ -83,23 +78,18 @@ def run_preflight(payload: Json, *, use_m3: bool = False, reviewer: Reviewer | N
         elif status_value not in {"pass", "skipped"}:
             advisories.append(_reason("m3_uncertain", "minor", "M3 did not return a pass verdict."))
 
-    status = "block" if reasons else "pass"
     report: Json = {
-        "status": status,
+        "status": "pass",
         "qa_version": "preflight-v2",
         "input_hash": _hash_json(payload),
         "cleaned_hash": _hash_json(cleaned),
         "safe_fixes_applied": fixes,
-        "blocked_reasons": reasons,
+        "blocked_reasons": [],
         "advisories": advisories,
-        "deterministic_result": {
-            "status": "block" if reasons else "pass",
-            "blocked_reasons": reasons,
-        },
         "m3_result": m3_result,
         "invariant_result": invariant,
-        "cleaned_payload": cleaned if status == "pass" else None,
-        "cleaned_body_markdown": _body(cleaned) if status == "pass" else "",
+        "cleaned_payload": cleaned,
+        "cleaned_body_markdown": _body(cleaned),
     }
     return report
 

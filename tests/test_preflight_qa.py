@@ -41,10 +41,12 @@ def test_duplicate_paragraph_with_number_is_cleaned_without_blocking() -> None:
     assert report["cleaned_body_markdown"].count("Effect was 5% lower.") == 1
 
 
-def test_missing_doi_is_the_hard_block() -> None:
+def test_missing_doi_is_advisory_only() -> None:
     report = run_preflight(_payload("This may cite DOI 10.9999/missing."))
-    assert report["status"] == "block"
-    assert {r["code"] for r in report["blocked_reasons"]} == {"doi_not_in_source_bundle"}
+    assert report["status"] == "pass"
+    assert report["blocked_reasons"] == []
+    assert "doi_not_in_source_bundle" in _advisory_codes(report)
+    assert report["cleaned_payload"] is not None
 
 
 def test_positive_abstract_over_null_evidence_is_advisory_not_block() -> None:

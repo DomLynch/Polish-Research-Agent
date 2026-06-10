@@ -18,8 +18,12 @@ It runs after v3/v4 produce an artifact and before submission to Researka.
 
 It may:
 - safely clean presentation defects
-- block unsupported citations / overclaims / M3 semantic failures
+- block fabricated citations (DOI/PMID cited but absent from the source bundle) — the only hard block
+- report all other findings (overclaims, direction mismatches, M3 review) as advisories
 - write machine-readable reports and cleaned payloads
+
+Note: as of preflight-v2 the gate is improve-only. The VPS deploy runs the
+older fully-blocking build until it pulls the latest main.
 
 It must not:
 - retrieve evidence

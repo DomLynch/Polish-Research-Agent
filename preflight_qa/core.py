@@ -43,43 +43,58 @@ HEDGE_TERMS = (
 )
 
 
+# Improve-only gate: the only hard blocks are fabricated citations.
+# Everything else is reported as an advisory and never stops submission.
+HARD_BLOCK_CODES = {"doi_not_in_source_bundle", "pmid_not_in_source_bundle"}
+
+
 def run_preflight(payload: Json, *, use_m3: bool = False, reviewer: Reviewer | None = None) -> Json:
     before = json.loads(json.dumps(payload))
     canonical = _canonical(payload)
     fixes: list[str] = []
-    reasons: list[Json] = []
+    advisories: list[Json] = []
 
     cleaned = _clean_payload(before, fixes)
     cleaned_canonical = _canonical(cleaned)
+
+    invariant = _invariant_check(canonical, cleaned_canonical)
+    if invariant["status"] != "pass":
+        # Improve-only: if cleaning altered protected content, ship the original untouched.
+        cleaned = json.loads(json.dumps(payload))
+        cleaned_canonical = canonical
+        fixes = []
+        advisories.append(_reason(
+            "cleaning_reverted", "minor",
+            "Safe fixes were reverted because cleaning altered protected content.",
+        ))
+
     deterministic_reasons = _deterministic_blocks(cleaned_canonical)
-    reasons.extend(deterministic_reasons)
+    reasons = [r for r in deterministic_reasons if r["code"] in HARD_BLOCK_CODES]
+    advisories.extend(r for r in deterministic_reasons if r["code"] not in HARD_BLOCK_CODES)
 
     m3_result: Json = {"status": "skipped"}
     if not reasons and (use_m3 or _env_truthy("PREFLIGHT_USE_M3")):
         m3_result = reviewer(cleaned_canonical) if reviewer else _minimax_review(cleaned_canonical)
         status_value = m3_result.get("status")
         if status_value == "block":
-            reasons.extend(_m3_block_reasons(m3_result))
+            advisories.extend(_m3_block_reasons(m3_result))
         elif status_value == "not_configured":
-            reasons.append(_reason("m3_not_configured", "major", "M3 was enabled but not configured."))
+            advisories.append(_reason("m3_not_configured", "minor", "M3 was enabled but not configured."))
         elif status_value not in {"pass", "skipped"}:
-            reasons.append(_reason("m3_uncertain", "major", "M3 did not return a pass verdict."))
-
-    invariant = _invariant_check(canonical, cleaned_canonical)
-    if invariant["status"] != "pass":
-        reasons.extend(invariant["failures"])
+            advisories.append(_reason("m3_uncertain", "minor", "M3 did not return a pass verdict."))
 
     status = "block" if reasons else "pass"
     report: Json = {
         "status": status,
-        "qa_version": "preflight-v1",
+        "qa_version": "preflight-v2",
         "input_hash": _hash_json(payload),
         "cleaned_hash": _hash_json(cleaned),
         "safe_fixes_applied": fixes,
         "blocked_reasons": reasons,
+        "advisories": advisories,
         "deterministic_result": {
-            "status": "block" if deterministic_reasons else "pass",
-            "blocked_reasons": deterministic_reasons,
+            "status": "block" if reasons else "pass",
+            "blocked_reasons": reasons,
         },
         "m3_result": m3_result,
         "invariant_result": invariant,

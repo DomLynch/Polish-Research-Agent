@@ -4,7 +4,7 @@ Independent final pre-submit cleaner and QA gate for Researka research artifacts
 
 ## Purpose
 
-This package runs after v3/v4 producers finish an artifact and before anything is submitted to Researka. It can apply safe presentation cleanup and block unsafe artifacts. It does not retrieve sources, add citations, decide publication, or replace the Researka gatekeeper.
+This package runs after v3/v4 producers finish an artifact and before anything is submitted to Researka. It is improve-only: it applies safe presentation cleanup and reports findings as advisories. The single hard block is a fabricated citation (a DOI/PMID cited in the text but absent from the source bundle). If cleanup would alter protected content (numbers, citations, hedges, title), the original text is shipped untouched instead. It does not retrieve sources, add citations, decide publication, or replace the Researka gatekeeper.
 
 ## CLI
 
@@ -22,7 +22,7 @@ Optional MiniMax-M3 semantic review:
 RESEARKA_PREFLIGHT_USE_M3=1 MINIMAX_API_KEY=... python -m preflight_qa check --input payload.json --out report.json --clean-out cleaned_payload.json --use-m3
 ```
 
-M3 can add a block but cannot clear deterministic blocks.
+M3 review is advisory only: its findings are recorded in the report's `advisories` and never block or clear anything.
 
 ## Integration
 

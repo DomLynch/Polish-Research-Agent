@@ -28,7 +28,8 @@ POS_RE = re.compile(
 NEGATED_POS_RE = re.compile(
     r"\b(?:not|no|mixed|limited|weak|null|insufficient|inconclusive|unclear)\s+"
     r"(?:strong|support(?:s|ed)?|positive|benefit|beneficial|improv(?:e|es|ed)|"
-    r"reduc(?:e|es|ed)|increas(?:e|es|ed)|significant|robust)\b",
+    r"reduc(?:e|es|ed)|increas(?:e|es|ed)|significant|robust)"
+    r"(?:\s+(?:signal|effect|benefit|claim|result|finding|evidence))?\b",
     re.I,
 )
 WEAK_RE = re.compile(

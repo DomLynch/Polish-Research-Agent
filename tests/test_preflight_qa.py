@@ -44,6 +44,19 @@ def test_positive_abstract_over_null_evidence_blocks() -> None:
     assert "abstract_results_direction_mismatch" in {r["code"] for r in report["blocked_reasons"]}
 
 
+def test_negated_support_over_null_evidence_does_not_block_direction() -> None:
+    report = run_preflight(_payload(
+        "## Result\n\nThe primary claim is not supported; evidence remains limited.",
+        abstract="The results show mixed support, not significant benefit.",
+        sources=[
+            {"title": "Null trial", "doi": "10.1000/abc", "excerpt": "no effect and not significant"},
+            {"title": "Limited trial", "doi": "10.1000/def", "excerpt": "limited signal"},
+        ],
+    ))
+    assert report["status"] == "pass"
+    assert "abstract_results_direction_mismatch" not in {r["code"] for r in report["blocked_reasons"]}
+
+
 def test_m3_can_add_block_but_not_needed_for_pass() -> None:
     def reviewer(_payload: dict) -> dict:
         return {

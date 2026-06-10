@@ -7,13 +7,13 @@ Last updated: 2026-06-10 19:55 +04
 - Local folder: `/Users/domininclynch/Desktop/Business/Polish - Research agent`
 - GitHub: `https://github.com/DomLynch/Polish-Research-Agent`
 - Branch: `main`
-- Base package/runtime commit before this handover doc: `227a4a3`
+- Current package commit checked during cleanup: `5aa12fc`
 - VPS deploy path: `/opt/researka-preflight-qa`
 - Legacy local checkout still exists at `/Users/domininclynch/Desktop/Business/researka-preflight-qa`; use the canonical folder above for future commits.
 
 ## Purpose
 
-Independent final pre-submit cleaner and QA gate for Researka research artifacts.
+Independent final pre-submit polish-and-report layer for Researka research artifacts.
 It runs after v3/v4 produce an artifact and before submission to Researka.
 
 It may:
@@ -21,11 +21,9 @@ It may:
 - report findings (unsupported citations, overclaims, direction mismatches, M3 review) as advisories
 - write machine-readable reports and cleaned payloads
 
-It never blocks a submission. Producer checks and Researka platform review
-own rejection.
-
-Note: as of preflight-v2 the layer is advisory-only. The VPS deploy runs the
-older fully-blocking build until it pulls the latest main.
+It never blocks a submission. If cleaning would change protected content,
+the original payload is shipped untouched and the reason is reported. Producer
+checks and Researka platform review own rejection.
 
 It must not:
 - retrieve evidence
@@ -75,7 +73,7 @@ python3 -m pytest -q
 Observed:
 
 ```text
-9 passed in 0.21s
+14 passed
 ```
 
 ### v3 Focused Tests
@@ -98,12 +96,13 @@ mypy: Success: no issues found in 1 source file
 pytest: 2 passed
 ```
 
-- VPS v4 service venv does not have `pytest`; VPS verification uses `py_compile` plus live smoke.
+- VPS v4 service venv historically lacked `pytest`; if unavailable, use `py_compile`
+  plus live smoke and run pytest locally.
 
 ## Live M3 Smoke Artifacts
 
-Smoke semantics: the `block` rows below are intentional adversarial overclaim payloads.
-`checked=false` plus `m3_status=block` is the expected passing result in enforce mode.
+Smoke semantics: adversarial overclaim payloads should be submitted onward with
+`status=pass`, advisory codes, and `m3_status=block` in the report.
 
 ### v3
 

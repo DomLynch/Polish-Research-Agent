@@ -7,7 +7,7 @@ Last updated: 2026-06-10 19:55 +04
 - Local folder: `/Users/domininclynch/Desktop/Business/Polish - Research agent`
 - GitHub: `https://github.com/DomLynch/Polish-Research-Agent`
 - Branch: `main`
-- Current package commit checked during cleanup: `5aa12fc`
+- Current package commit checked during cleanup: `dbe6f6a`
 - VPS deploy path: `/opt/researka-preflight-qa`
 - Legacy local checkout still exists at `/Users/domininclynch/Desktop/Business/researka-preflight-qa`; use the canonical folder above for future commits.
 
@@ -36,7 +36,7 @@ It must not:
 ### v3 Research Agent
 
 - VPS repo: `/opt/research-agent-bot`
-- Current live commit checked during handover: `a4dfe5d8`
+- Current live commit checked during cleanup: `9aa2c0df`
 - Env file: `/etc/research-agent-bot/research-agent-bot.env`
 - Live env:
   - `RESEARKA_PREFLIGHT_QA=live`
@@ -48,7 +48,7 @@ It must not:
 ### v4 Alpha Memo Agent
 
 - VPS repo: `/root/Research-Agent-Bot-v4`
-- Current live commit checked during handover: `a53b4df`
+- Current live commit checked during cleanup: `50ea754`
 - Env files:
   - `/root/Research-Agent-Bot-v4/.env`
   - `/etc/researka-agent-v4.env`
@@ -109,14 +109,14 @@ Smoke semantics: adversarial overclaim payloads should be submitted onward with
 Path:
 
 ```text
-/root/researka-v3-live-preflight-smoke/20260610T1850Z/LIVE_SMOKE_SUMMARY.json
+/root/researka-v3-live-preflight-smoke/advisory-current/LIVE_SMOKE_SUMMARY.json
 ```
 
 Summary:
 
 ```text
-pass:  checked=true,  status=pass,  m3_status=pass
-block: checked=false, status=block, m3_status=block, codes=m3_block,m3_block
+clean:    checked=true, status=pass, m3_status=pass, advisories=[]
+advisory: checked=true, status=pass, m3_status=pass, advisories=[doi_not_in_source_bundle]
 ```
 
 ### v4
@@ -124,16 +124,16 @@ block: checked=false, status=block, m3_status=block, codes=m3_block,m3_block
 Path:
 
 ```text
-/root/researka-v4-live-preflight-smoke/current-commit/LIVE_SMOKE_SUMMARY.json
+/root/researka-v4-live-preflight-smoke/advisory-current/LIVE_SMOKE_SUMMARY.json
 ```
 
 Current regenerated summary:
 
 ```text
-commit=a53b4df
+commit=50ea754
 env=RESEARKA_PREFLIGHT_QA=enforce, RESEARKA_PREFLIGHT_USE_M3=1
-pass:  checked=true,  status=pass,  m3_status=pass
-block: checked=false, status=block, m3_status=block, codes=m3_block
+clean:    checked=true, status=pass, m3_status=pass, advisories=[]
+advisory: checked=true, status=pass, m3_status=block, advisories=[doi_not_in_source_bundle,m3_block]
 ```
 
 ## Commands For Claude Audit
@@ -156,7 +156,7 @@ ssh -i ~/.ssh/binance_futures_tool root@100.96.74.1 \
 
 # v4 live env + smoke
 ssh -i ~/.ssh/binance_futures_tool root@100.96.74.1 \
-  'cd /root/Research-Agent-Bot-v4 && git rev-parse --short HEAD && git rev-parse --short @{u} && git status --short && grep -h "^RESEARKA_PREFLIGHT" .env /etc/researka-agent-v4.env && cat /root/researka-v4-live-preflight-smoke/current-commit/LIVE_SMOKE_SUMMARY.json'
+  'cd /root/Research-Agent-Bot-v4 && git rev-parse --short HEAD && git rev-parse --short @{u} && git status --short && grep -h "^RESEARKA_PREFLIGHT" .env /etc/researka-agent-v4.env && cat /root/researka-v4-live-preflight-smoke/advisory-current/LIVE_SMOKE_SUMMARY.json'
 ```
 
 ## Known Caveats

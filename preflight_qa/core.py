@@ -43,8 +43,9 @@ HEDGE_TERMS = (
 )
 
 
-# Advisory-only: this layer never blocks. Producer checks and Researka
-# platform review own rejection; everything found here is an advisory.
+# Enforcing gate: critical findings (missing/contradicted evidence, fake
+# citations, M3-confirmed overclaim) set status="block" and populate
+# blocked_reasons; softer findings remain non-blocking advisories.
 def run_preflight(payload: Json, *, use_m3: bool = False, reviewer: Reviewer | None = None) -> Json:
     before = json.loads(json.dumps(payload))
     canonical = _canonical(payload)

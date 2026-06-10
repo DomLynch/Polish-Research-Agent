@@ -98,6 +98,16 @@ def test_m3_block_without_reasons_fails_closed() -> None:
     assert report["blocked_reasons"][0]["source"] == "m3"
 
 
+def test_m3_required_but_not_configured_fails_closed() -> None:
+    def reviewer(_payload: dict) -> dict:
+        return {"status": "not_configured"}
+
+    report = run_preflight(_payload("## Result\n\nThis may be limited."), use_m3=True, reviewer=reviewer)
+
+    assert report["status"] == "block"
+    assert {r["code"] for r in report["blocked_reasons"]} == {"m3_not_configured"}
+
+
 def test_cli_writes_report_and_clean_payload(tmp_path: Path) -> None:
     src = tmp_path / "input.json"
     report = tmp_path / "report.json"

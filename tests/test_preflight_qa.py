@@ -7,7 +7,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from preflight_qa.core import run_preflight
+from preflight_qa.core import (
+    _judge_collides,
+    _resolve_judge_model,
+    run_preflight,
+)
 
 
 def _payload(body: str, *, abstract: str = "This may be limited.", sources: list[dict] | None = None) -> dict:
@@ -106,6 +110,78 @@ def test_m3_required_but_not_configured_fails_closed() -> None:
 
     assert report["status"] == "block"
     assert {r["code"] for r in report["blocked_reasons"]} == {"m3_not_configured"}
+
+
+def test_duplicate_paragraph_with_number_is_cleaned_without_blocking() -> None:
+    body = "## Result\n\nEffect was 5% lower.\n\nEffect was 5% lower."
+    report = run_preflight(_payload(body))
+    assert report["status"] == "pass"
+    assert report["safe_fixes_applied"] == ["remove_duplicate_paragraph"]
+    assert report["invariant_result"]["status"] == "pass"
+    assert report["cleaned_body_markdown"].count("Effect was 5% lower.") == 1
+
+
+def test_overclaim_without_structured_evidence_blocks() -> None:
+    report = run_preflight(_payload(
+        "## Result\n\nThe treatment shows strong significant benefit and improves outcomes.",
+        abstract="Strong positive benefit demonstrated.",
+        sources=[{"doi": "10.1000/abc"}, {"doi": "10.1000/def"}],
+    ))
+    assert report["status"] == "block"
+    assert "overclaim_ungated" in {r["code"] for r in report["blocked_reasons"]}
+
+
+def test_overclaim_not_flagged_when_structured_evidence_present() -> None:
+    report = run_preflight(_payload(
+        "## Result\n\nThe treatment shows strong significant benefit and improves outcomes.",
+        abstract="Strong positive benefit demonstrated.",
+        sources=[
+            {"title": "Trial", "doi": "10.1000/abc", "excerpt": "significant benefit", "direction": "positive"},
+            {"title": "Trial2", "doi": "10.1000/def", "excerpt": "improved outcomes", "direction": "positive"},
+        ],
+    ))
+    assert "overclaim_ungated" not in {r["code"] for r in report["blocked_reasons"]}
+
+
+def test_env_only_m3_not_configured_fails_closed(monkeypatch) -> None:
+    monkeypatch.setenv("PREFLIGHT_USE_M3", "1")
+
+    def reviewer(_payload: dict) -> dict:
+        return {"status": "not_configured"}
+
+    report = run_preflight(_payload("## Result\n\nThis may be limited."), use_m3=False, reviewer=reviewer)
+
+    assert report["status"] == "block"
+    assert {r["code"] for r in report["blocked_reasons"]} == {"m3_not_configured"}
+
+
+def test_judge_collision_with_writer_model_blocks() -> None:
+    def reviewer(_payload: dict) -> dict:
+        return {"status": "judge_collision", "model": "MiniMax-M3"}
+
+    report = run_preflight(_payload("## Result\n\nThis may be limited."), use_m3=True, reviewer=reviewer)
+
+    assert report["status"] == "block"
+    assert {r["code"] for r in report["blocked_reasons"]} == {"judge_equals_writer"}
+
+
+def test_judge_model_is_independent_of_writer_model(monkeypatch) -> None:
+    # With a MiniMax writer and the default judge, there is no collision out of the box.
+    monkeypatch.setenv("MIMO_MODEL", "MiniMax-M3")
+    monkeypatch.delenv("PREFLIGHT_JUDGE_MODEL", raising=False)
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    assert _resolve_judge_model() != "MiniMax-M3"
+    assert _judge_collides(_resolve_judge_model()) is False
+
+    # If someone explicitly points the judge at the writer model, the guard blocks it.
+    monkeypatch.setenv("PREFLIGHT_JUDGE_MODEL", "MiniMax-M3")
+    assert _judge_collides(_resolve_judge_model()) is True
+
+
+def test_judge_guard_does_not_false_positive_without_writer_model(monkeypatch) -> None:
+    for var in ("MINIMAX_MODEL", "MIMO_MODEL", "PREFLIGHT_JUDGE_MODEL", "ANTHROPIC_MODEL"):
+        monkeypatch.delenv(var, raising=False)
+    assert _judge_collides(_resolve_judge_model()) is False
 
 
 def test_cli_writes_report_and_clean_payload(tmp_path: Path) -> None:

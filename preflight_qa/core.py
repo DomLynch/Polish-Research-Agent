@@ -54,14 +54,21 @@ def run_preflight(payload: Json, *, use_m3: bool = False, reviewer: Reviewer | N
     deterministic_reasons = _deterministic_blocks(cleaned_canonical)
     reasons.extend(deterministic_reasons)
 
-    m3_result = {"status": "skipped"}
-    if not reasons and (use_m3 or os.getenv("PREFLIGHT_USE_M3", "").lower() in {"1", "true", "yes", "on"}):
+    m3_result: Json = {"status": "skipped"}
+    if not reasons and (use_m3 or _env_truthy("PREFLIGHT_USE_M3")):
         m3_result = reviewer(cleaned_canonical) if reviewer else _minimax_review(cleaned_canonical)
-        if m3_result.get("status") == "block":
+        status_value = m3_result.get("status")
+        if status_value == "block":
             reasons.extend(_m3_block_reasons(m3_result))
-        elif m3_result.get("status") == "not_configured" and use_m3:
-            reasons.append(_reason("m3_not_configured", "major", "M3 was required but not configured."))
-        elif m3_result.get("status") not in {"pass", "skipped", "not_configured"}:
+        elif status_value == "not_configured":
+            reasons.append(_reason("m3_not_configured", "major", "M3 was enabled but not configured."))
+        elif status_value == "judge_collision":
+            reasons.append(_reason(
+                "judge_equals_writer", "major",
+                "Preflight judge model matches the writer model; "
+                "set PREFLIGHT_JUDGE_MODEL to a different model.",
+            ))
+        elif status_value not in {"pass", "skipped"}:
             reasons.append(_reason("m3_uncertain", "major", "M3 did not return a pass verdict."))
 
     invariant = _invariant_check(canonical, cleaned_canonical)
@@ -112,7 +119,7 @@ def _body(payload: Json) -> str:
 
 
 def _clean_payload(payload: Json, fixes: list[str]) -> Json:
-    out = json.loads(json.dumps(payload))
+    out: Json = json.loads(json.dumps(payload))
     for key in ("body_markdown", "markdown", "abstract", "summary"):
         if isinstance(out.get(key), str):
             out[key] = _clean_markdown(out[key], fixes)
@@ -172,6 +179,11 @@ def _deterministic_blocks(c: Json) -> list[Json]:
             "abstract_results_direction_mismatch", "critical",
             "Prose claims a positive or strong signal while structured evidence is weak/null/unclear.",
         ))
+    if _positive_signal(prose) and _evidence_is_empty(c):
+        reasons.append(_reason(
+            "overclaim_ungated", "major",
+            "Prose asserts a positive or strong signal but no structured evidence was provided to evaluate it.",
+        ))
     return reasons
 
 
@@ -207,7 +219,7 @@ def _invariant_check(before: Json, after: Json) -> Json:
 
 
 def _numbers(c: Json) -> list[str]:
-    return NUMBER_RE.findall(c["body_markdown"] + "\n" + c["abstract"])
+    return sorted(set(NUMBER_RE.findall(c["body_markdown"] + "\n" + c["abstract"])))
 
 
 def _citations(c: Json) -> list[str]:
@@ -273,17 +285,51 @@ def _add_fix(fixes: list[str], code: str) -> None:
         fixes.append(code)
 
 
+def _env_truthy(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _writer_model() -> str:
+    return (os.getenv("MINIMAX_MODEL") or os.getenv("MIMO_MODEL") or "").strip()
+
+
+def _resolve_judge_model() -> str:
+    # Default to a judge that differs from the MiniMax writer so the rule holds out of the box.
+    return (os.getenv("PREFLIGHT_JUDGE_MODEL") or os.getenv("ANTHROPIC_MODEL") or "claude-haiku-4-5-20251001").strip()
+
+
+def _judge_collides(judge_model: str) -> bool:
+    writer = _writer_model().lower()
+    return bool(writer) and judge_model.strip().lower() == writer
+
+
+def _evidence_is_empty(c: Json) -> bool:
+    for row in c["source_bundle"]:
+        for key in ("title", "excerpt", "evidence_type", "direction", "support", "relevance"):
+            if str(row.get(key) or "").strip():
+                return False
+    return not bool(c["evidence_bundle"])
+
+
 def _minimax_review(c: Json) -> Json:
-    api_key = os.getenv("MINIMAX_API_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("MIMO_API_KEY")
+    model = _resolve_judge_model()
+    if _judge_collides(model):
+        return {"status": "judge_collision", "model": model}
+    api_key = (
+        os.getenv("PREFLIGHT_JUDGE_API_KEY")
+        or os.getenv("MINIMAX_API_KEY")
+        or os.getenv("ANTHROPIC_API_KEY")
+        or os.getenv("MIMO_API_KEY")
+    )
     if not api_key:
         return {"status": "not_configured"}
     base = (
-        os.getenv("MINIMAX_BASE_URL")
+        os.getenv("PREFLIGHT_JUDGE_BASE_URL")
+        or os.getenv("MINIMAX_BASE_URL")
         or os.getenv("ANTHROPIC_BASE_URL")
         or os.getenv("MIMO_BASE_URL")
         or "https://api.minimax.io/anthropic"
     ).rstrip("/")
-    model = os.getenv("MINIMAX_MODEL") or os.getenv("ANTHROPIC_MODEL") or os.getenv("MIMO_MODEL") or "MiniMax-M3"
     prompt = (
         "Return JSON only: {\"status\":\"pass|block\",\"blocked_reasons\":[]}.\n"
         "Block only if prose overclaims, direction conflicts with evidence, or uncertainty should fail closed.\n"
@@ -319,9 +365,12 @@ def _minimax_review(c: Json) -> Json:
         return {"status": "review_error", "error": type(exc).__name__, "model": model}
     text = _minimax_text(data)
     try:
-        out = json.loads(text[text.find("{"): text.rfind("}") + 1])
+        parsed = json.loads(text[text.find("{"): text.rfind("}") + 1])
     except (ValueError, json.JSONDecodeError):
         return {"status": "review_error", "error": "invalid_json", "model": model}
+    if not isinstance(parsed, dict):
+        return {"status": "review_error", "error": "non_object", "model": model}
+    out: Json = parsed
     out["model"] = model
     return out
 

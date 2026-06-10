@@ -159,6 +159,19 @@ def test_env_only_m3_not_configured_is_advisory(monkeypatch) -> None:
     assert "m3_not_configured" in _advisory_codes(report)
 
 
+def test_env_only_m3_without_key_uses_real_not_configured_path(monkeypatch) -> None:
+    monkeypatch.setenv("PREFLIGHT_USE_M3", "1")
+    monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("MIMO_API_KEY", raising=False)
+
+    report = run_preflight(_payload("## Result\n\nThis may be limited."))
+
+    assert report["status"] == "pass"
+    assert report["m3_result"]["status"] == "not_configured"
+    assert "m3_not_configured" in _advisory_codes(report)
+
+
 def test_cleaning_reverts_to_original_when_invariant_trips() -> None:
     body = "## Result\n\nTODO drop 5% placeholder\n\nThis may be limited."
     report = run_preflight(_payload(body))

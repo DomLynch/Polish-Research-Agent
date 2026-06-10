@@ -59,6 +59,8 @@ def run_preflight(payload: Json, *, use_m3: bool = False, reviewer: Reviewer | N
         m3_result = reviewer(cleaned_canonical) if reviewer else _minimax_review(cleaned_canonical)
         if m3_result.get("status") == "block":
             reasons.extend(_m3_block_reasons(m3_result))
+        elif m3_result.get("status") == "not_configured" and use_m3:
+            reasons.append(_reason("m3_not_configured", "major", "M3 was required but not configured."))
         elif m3_result.get("status") not in {"pass", "skipped", "not_configured"}:
             reasons.append(_reason("m3_uncertain", "major", "M3 did not return a pass verdict."))
 

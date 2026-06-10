@@ -73,7 +73,7 @@ python3 -m pytest -q
 Observed:
 
 ```text
-14 passed
+15 passed
 ```
 
 ### v3 Focused Tests

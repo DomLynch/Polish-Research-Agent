@@ -58,9 +58,7 @@ def run_preflight(payload: Json, *, use_m3: bool = False, reviewer: Reviewer | N
     if not reasons and (use_m3 or os.getenv("PREFLIGHT_USE_M3", "").lower() in {"1", "true", "yes", "on"}):
         m3_result = reviewer(cleaned_canonical) if reviewer else _minimax_review(cleaned_canonical)
         if m3_result.get("status") == "block":
-            for item in m3_result.get("blocked_reasons") or []:
-                if isinstance(item, dict):
-                    reasons.append(item | {"source": "m3"})
+            reasons.extend(_m3_block_reasons(m3_result))
         elif m3_result.get("status") not in {"pass", "skipped", "not_configured"}:
             reasons.append(_reason("m3_uncertain", "major", "M3 did not return a pass verdict."))
 
@@ -244,6 +242,22 @@ def _clean_doi(value: str) -> str:
 
 def _reason(code: str, severity: str, message: str) -> Json:
     return {"code": code, "severity": severity, "message": message}
+
+
+def _m3_block_reasons(result: Json) -> list[Json]:
+    raw = result.get("blocked_reasons") or []
+    items = raw if isinstance(raw, list) else [raw]
+    reasons: list[Json] = []
+    for item in items:
+        if isinstance(item, dict):
+            reasons.append(item | {"source": "m3"})
+        elif str(item).strip():
+            reasons.append(_reason("m3_block", "major", str(item).strip()) | {"source": "m3"})
+    if not reasons:
+        reasons.append(_reason(
+            "m3_block", "major", "M3 returned block without a usable reason.",
+        ) | {"source": "m3"})
+    return reasons
 
 
 def _hash_json(payload: Any) -> str:

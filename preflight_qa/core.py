@@ -309,8 +309,9 @@ def _minimax_review(c: Json) -> Json:
     model = os.getenv("MINIMAX_MODEL") or os.getenv("ANTHROPIC_MODEL") or os.getenv("MIMO_MODEL") or "MiniMax-M3"
     prompt = (
         "Return JSON only: {\"status\":\"pass|block\",\"blocked_reasons\":[]}.\n"
-        "Block only if prose overclaims, direction conflicts with evidence, or uncertainty should fail closed.\n"
-        "You cannot clear deterministic blocks or rewrite text.\n\n"
+        "This review is advisory-only. Use block only to report material overclaim "
+        "or a direct prose/evidence conflict; do not block cautious, hedged, or limited prose.\n"
+        "You cannot clear deterministic advisories or rewrite text.\n\n"
         + json.dumps({
             "title": c["title"],
             "abstract": c["abstract"][:2000],

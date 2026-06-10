@@ -25,6 +25,12 @@ POS_RE = re.compile(
     r"reduc(?:e|es|ed)|increas(?:e|es|ed)|significant|robust)\b",
     re.I,
 )
+NEGATED_POS_RE = re.compile(
+    r"\b(?:not|no|mixed|limited|weak|null|insufficient|inconclusive|unclear)\s+"
+    r"(?:strong|support(?:s|ed)?|positive|benefit|beneficial|improv(?:e|es|ed)|"
+    r"reduc(?:e|es|ed)|increas(?:e|es|ed)|significant|robust)\b",
+    re.I,
+)
 WEAK_RE = re.compile(
     r"\b(null|unclear|limited|not significant|non-significant|no effect|"
     r"insufficient|mixed|inconclusive)\b",
@@ -160,7 +166,7 @@ def _deterministic_blocks(c: Json) -> list[Json]:
     prose = (abstract + "\n" + _first_section(body)).lower()
     evidence = _evidence_text(c).lower()
     evidence_without_weak_phrases = WEAK_RE.sub(" ", evidence)
-    if POS_RE.search(prose) and WEAK_RE.search(evidence) and not POS_RE.search(evidence_without_weak_phrases):
+    if _positive_signal(prose) and WEAK_RE.search(evidence) and not _positive_signal(evidence_without_weak_phrases):
         reasons.append(_reason(
             "abstract_results_direction_mismatch", "critical",
             "Prose claims a positive or strong signal while structured evidence is weak/null/unclear.",
@@ -225,6 +231,10 @@ def _evidence_text(c: Json) -> str:
 
 def _first_section(body: str) -> str:
     return body.split("\n## ", 1)[0][:2000]
+
+
+def _positive_signal(text: str) -> re.Match[str] | None:
+    return POS_RE.search(NEGATED_POS_RE.sub(" ", text))
 
 
 def _clean_doi(value: str) -> str:

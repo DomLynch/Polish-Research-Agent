@@ -42,6 +42,7 @@ It must not:
   - `RESEARKA_PREFLIGHT_QA=live`
   - `RESEARKA_PREFLIGHT_QA_ROOT=/opt/researka-preflight-qa`
   - `RESEARKA_PREFLIGHT_USE_M3=1`
+  - `PREFLIGHT_METRICS_LOG=/var/log/researka-preflight-metrics.jsonl`
 - Code behavior: v3 maps `live` to `enforce` in `scripts/daily_research_paper_submit.py`.
 - Timers: v3 submit/fresh/revise/reconcile timers active.
 
@@ -56,6 +57,7 @@ It must not:
   - `RESEARKA_PREFLIGHT_QA=enforce`
   - `RESEARKA_PREFLIGHT_QA_ROOT=/opt/researka-preflight-qa`
   - `RESEARKA_PREFLIGHT_USE_M3=1`
+  - `PREFLIGHT_METRICS_LOG=/var/log/researka-preflight-metrics.jsonl`
 - Timers: v4 alpha timers active.
 - Last organic v4 AI service checks reached the service path but stopped at `no_fresh_candidate`, so they did not naturally exercise submit/preflight.
 

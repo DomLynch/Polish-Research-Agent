@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -41,6 +42,13 @@ HEDGE_TERMS = (
     "may", "might", "unclear", "limited", "null", "supported",
     "not supported", "hypothesis", "context", "narrow",
 )
+
+# M3 network resilience. Env-tunable so total time stays inside the caller's
+# subprocess budget: default 20s x 3 attempts + backoff stays well under 90s.
+_M3_TIMEOUT = float(os.getenv("PREFLIGHT_M3_TIMEOUT", "20"))
+_M3_ATTEMPTS = max(1, int(os.getenv("PREFLIGHT_M3_ATTEMPTS", "3")))
+_M3_BACKOFF = float(os.getenv("PREFLIGHT_M3_BACKOFF", "0.5"))
+_M3_RETRY_HTTP = {408, 409, 425, 429, 500, 502, 503, 504}
 
 
 # Advisory-only: this layer never blocks. Producer checks and Researka
@@ -336,11 +344,9 @@ def _minimax_review(c: Json) -> Json:
             "Content-Type": "application/json",
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=45) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except (OSError, urllib.error.HTTPError, ValueError) as exc:
-        return {"status": "review_error", "error": type(exc).__name__, "model": model}
+    data, error = _minimax_fetch(req)
+    if error or data is None:
+        return {"status": "review_error", "error": error or "no_response", "model": model}
     text = _minimax_text(data)
     try:
         parsed = json.loads(text[text.find("{"): text.rfind("}") + 1])
@@ -351,6 +357,25 @@ def _minimax_review(c: Json) -> Json:
     out: Json = parsed
     out["model"] = model
     return out
+
+
+def _minimax_fetch(req: urllib.request.Request) -> tuple[Json | None, str | None]:
+    """POST with bounded retries on transient failures. Returns (data, error_code)."""
+    error = "no_response"
+    for attempt in range(_M3_ATTEMPTS):
+        try:
+            with urllib.request.urlopen(req, timeout=_M3_TIMEOUT) as response:
+                data: Json = json.loads(response.read().decode("utf-8"))
+            return data, None
+        except urllib.error.HTTPError as exc:
+            error = f"http_{exc.code}"
+            if exc.code not in _M3_RETRY_HTTP:
+                return None, error
+        except (OSError, ValueError) as exc:
+            error = type(exc).__name__
+        if attempt + 1 < _M3_ATTEMPTS:
+            time.sleep(_M3_BACKOFF * 2 ** attempt)
+    return None, error
 
 
 def _minimax_text(data: Json) -> str:

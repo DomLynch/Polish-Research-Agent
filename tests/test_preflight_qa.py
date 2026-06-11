@@ -4,12 +4,30 @@ import json
 import os
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from preflight_qa import core
+from preflight_qa.cli import _emit_metrics
 from preflight_qa.core import run_preflight
+
+
+class _FakeResponse:
+    def __init__(self, verdict: str = "pass") -> None:
+        self._verdict = verdict
+
+    def __enter__(self) -> "_FakeResponse":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        body = {"content": [{"text": json.dumps({"status": self._verdict, "blocked_reasons": []})}]}
+        return json.dumps(body).encode("utf-8")
 
 
 def _payload(body: str, *, abstract: str = "This may be limited.", sources: list[dict] | None = None) -> dict:
@@ -259,3 +277,77 @@ def test_cli_writes_report_and_clean_payload(tmp_path: Path) -> None:
     assert proc.returncode == 0, proc.stderr
     assert json.loads(report.read_text())["status"] == "pass"
     assert json.loads(clean.read_text())["markdown"].startswith("## Result")
+
+
+def test_m3_retries_transient_error_then_succeeds(monkeypatch) -> None:
+    monkeypatch.setenv("MINIMAX_API_KEY", "test-key")
+    monkeypatch.setattr(core, "_M3_BACKOFF", 0.0)
+    calls = []
+
+    def flaky_urlopen(req: urllib.request.Request, timeout: float) -> _FakeResponse:
+        calls.append(timeout)
+        if len(calls) < 3:
+            raise urllib.error.URLError("connection reset")
+        return _FakeResponse("pass")
+
+    monkeypatch.setattr(urllib.request, "urlopen", flaky_urlopen)
+    report = run_preflight(_payload("## Result\n\nThis may be limited."), use_m3=True)
+
+    assert len(calls) == 3
+    assert report["m3_result"]["status"] == "pass"
+
+
+def test_m3_does_not_retry_client_error(monkeypatch) -> None:
+    monkeypatch.setenv("MINIMAX_API_KEY", "test-key")
+    calls = []
+
+    def bad_request(req: urllib.request.Request, timeout: float) -> _FakeResponse:
+        calls.append(timeout)
+        raise urllib.error.HTTPError("http://x", 400, "Bad Request", {}, None)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(urllib.request, "urlopen", bad_request)
+    report = run_preflight(_payload("## Result\n\nThis may be limited."), use_m3=True)
+
+    assert len(calls) == 1
+    assert report["m3_result"]["status"] == "review_error"
+    assert report["m3_result"]["error"] == "http_400"
+
+
+def test_m3_retries_exhaust_on_persistent_5xx(monkeypatch) -> None:
+    monkeypatch.setenv("MINIMAX_API_KEY", "test-key")
+    monkeypatch.setattr(core, "_M3_BACKOFF", 0.0)
+    monkeypatch.setattr(core, "_M3_ATTEMPTS", 3)
+    calls = []
+
+    def server_error(req: urllib.request.Request, timeout: float) -> _FakeResponse:
+        calls.append(timeout)
+        raise urllib.error.HTTPError("http://x", 503, "Unavailable", {}, None)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(urllib.request, "urlopen", server_error)
+    report = run_preflight(_payload("## Result\n\nThis may be limited."), use_m3=True)
+
+    assert len(calls) == 3
+    assert report["m3_result"]["status"] == "review_error"
+    assert report["m3_result"]["error"] == "http_503"
+    assert "m3_uncertain" in _advisory_codes(report)
+
+
+def test_emit_metrics_writes_jsonl_and_stderr(tmp_path: Path, monkeypatch, capsys) -> None:
+    metrics = tmp_path / "preflight_metrics.jsonl"
+    monkeypatch.setenv("PREFLIGHT_METRICS_LOG", str(metrics))
+    report = {
+        "qa_version": "preflight-v2",
+        "status": "pass",
+        "m3_result": {"status": "review_error"},
+        "safe_fixes_applied": ["repair_sentence_spacing"],
+        "advisories": [{"code": "doi_not_in_source_bundle"}],
+    }
+
+    _emit_metrics(report)
+
+    line = metrics.read_text(encoding="utf-8").strip()
+    record = json.loads(line)
+    assert record["m3"] == "review_error"
+    assert record["advisories"] == ["doi_not_in_source_bundle"]
+    assert record["fixes"] == ["repair_sentence_spacing"]
+    assert "preflight_qa " in capsys.readouterr().err

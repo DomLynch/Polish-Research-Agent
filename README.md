@@ -4,7 +4,7 @@ Independent final pre-submit cleaner and QA gate for Researka research artifacts
 
 ## Purpose
 
-This package runs after v3/v4 producers finish an artifact and before anything is submitted to Researka. It is improve-only and advisory-only: it applies safe presentation cleanup and reports every finding (unsupported citations, overclaims, M3 review) as an advisory. It never blocks a submission — producer checks and Researka platform review own rejection. If cleanup would alter protected content (numbers, citations, hedges, title), the original text is shipped untouched instead. It does not retrieve sources, add citations, decide publication, or replace the Researka gatekeeper.
+This package runs after v3/v4 producers finish an artifact and before anything is submitted to Researka. It is fix-first and improve-only: a fixable finding gets repaired (safe presentation cleanup, plus a standard limitation caveat when a narrow-signal artifact lacks one), and only findings it cannot safely fix (unsupported citations, overclaims, M3 review) are reported as advisories — warnings for the producer and downstream review. It never blocks a submission — producer checks and Researka platform review own rejection. If a fix would alter protected content (numbers, citations, title, or any existing hedge), the original text is shipped untouched instead. It does not retrieve sources, add citations, decide publication, or replace the Researka gatekeeper.
 
 ## CLI
 

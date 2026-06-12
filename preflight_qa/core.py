@@ -42,6 +42,12 @@ HEDGE_TERMS = (
     "may", "might", "unclear", "limited", "null", "supported",
     "not supported", "hypothesis", "context", "narrow",
 )
+# Digit- and citation-free by construction: appending it can only grow the
+# hedge set, so every other invariant is provably untouched.
+NARROW_CAVEAT = (
+    "Limitations: this signal rests on a limited, narrow evidence base "
+    "(a single source or fewer); treat it as preliminary and unconfirmed."
+)
 
 # M3 network resilience. Env-tunable so total time stays inside the caller's
 # subprocess budget: default 20s x 3 attempts + backoff stays well under 90s.
@@ -61,6 +67,13 @@ def run_preflight(payload: Json, *, use_m3: bool = False, reviewer: Reviewer | N
 
     cleaned = _clean_payload(before, fixes)
     cleaned_canonical = _canonical(cleaned)
+
+    # Fix-first: a fixable finding gets repaired, not advised. The advisory
+    # for it then clears naturally because detection re-runs on the fixed text;
+    # if the invariant trips, the revert below restores original + advisory.
+    if _needs_narrow_caveat(cleaned_canonical):
+        _apply_narrow_caveat(cleaned, fixes)
+        cleaned_canonical = _canonical(cleaned)
 
     invariant = _invariant_check(canonical, cleaned_canonical)
     if invariant["status"] != "pass":
@@ -173,7 +186,7 @@ def _deterministic_blocks(c: Json) -> list[Json]:
     if not bundle:
         reasons.append(_reason("missing_source_bundle", "critical", "No source bundle was provided."))
     reasons.extend(_missing_citations(body + "\n" + abstract, bundle))
-    if len(bundle) <= 1 and not WEAK_RE.search(body + " " + abstract):
+    if _needs_narrow_caveat(c):
         reasons.append(_reason(
             "missing_narrow_signal_caveat", "major",
             "Single-source or narrow-signal artifact lacks an explicit limitation/caveat.",
@@ -220,7 +233,10 @@ def _invariant_check(before: Json, after: Json) -> Json:
         ("source_count", [str(len(before["source_bundle"]))], [str(len(after["source_bundle"]))]),
     )
     for code, a, b in checks:
-        if a != b:
+        # Hedges may grow (sanctioned fixes add caveats) but never shrink —
+        # losing a hedge flips meaning. Everything else must match exactly.
+        changed = bool(set(a) - set(b)) if code == "hedges" else a != b
+        if changed:
             failures.append(_reason(f"invariant_{code}_changed", "critical", f"{code} changed during cleaning."))
     return {"status": "block" if failures else "pass", "failures": failures}
 
@@ -237,6 +253,17 @@ def _citations(c: Json) -> list[str]:
 def _hedges(c: Json) -> list[str]:
     text = (c["body_markdown"] + "\n" + c["abstract"]).lower()
     return [term for term in HEDGE_TERMS if re.search(rf"\b{re.escape(term)}\b", text)]
+
+
+def _needs_narrow_caveat(c: Json) -> bool:
+    text = c["body_markdown"] + " " + c["abstract"]
+    return bool(c["body_markdown"].strip()) and len(c["source_bundle"]) <= 1 and not WEAK_RE.search(text)
+
+
+def _apply_narrow_caveat(payload: Json, fixes: list[str]) -> None:
+    key = "body_markdown" if str(payload.get("body_markdown") or "").strip() else "markdown"
+    payload[key] = str(payload.get(key) or "").rstrip() + "\n\n" + NARROW_CAVEAT
+    _add_fix(fixes, "add_narrow_signal_caveat")
 
 
 def _evidence_text(c: Json) -> str:

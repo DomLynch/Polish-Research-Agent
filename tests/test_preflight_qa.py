@@ -262,6 +262,50 @@ def test_cleaning_reverts_to_original_when_invariant_trips() -> None:
     assert "cleaning_reverted" in _advisory_codes(report)
 
 
+def test_missing_caveat_is_fixed_not_advised() -> None:
+    report = run_preflight(_payload(
+        "## Result\n\nThe claim is supported.",
+        abstract="Strong positive benefit.",
+        sources=[{"title": "Trial", "doi": "10.1000/abc", "excerpt": "strong benefit", "direction": "positive"}],
+    ))
+    assert report["status"] == "pass"
+    assert "add_narrow_signal_caveat" in report["safe_fixes_applied"]
+    assert "missing_narrow_signal_caveat" not in _advisory_codes(report)
+    assert core.NARROW_CAVEAT in report["cleaned_body_markdown"]
+    assert report["invariant_result"]["status"] == "pass"
+
+
+def test_caveat_not_added_when_weak_language_present() -> None:
+    report = run_preflight(_payload("## Result\n\nEvidence remains limited."))
+    assert "add_narrow_signal_caveat" not in report["safe_fixes_applied"]
+    assert "missing_narrow_signal_caveat" not in _advisory_codes(report)
+
+
+def test_caveat_not_added_for_multi_source_artifact() -> None:
+    report = run_preflight(_payload(
+        "## Result\n\nThe claim is supported.",
+        abstract="Strong positive benefit.",
+        sources=[
+            {"title": "A", "doi": "10.1000/abc", "excerpt": "benefit", "direction": "positive"},
+            {"title": "B", "doi": "10.1000/def", "excerpt": "benefit", "direction": "positive"},
+        ],
+    ))
+    assert "add_narrow_signal_caveat" not in report["safe_fixes_applied"]
+    assert "missing_narrow_signal_caveat" not in _advisory_codes(report)
+
+
+def test_hedge_removal_still_reverts_and_falls_back_to_warning() -> None:
+    # Debug-line strip would remove the only "may" hedge -> revert all
+    # fixes (including the attempted caveat) and warn instead. "may" is a
+    # hedge but not a WEAK_RE term, so the caveat advisory must reappear.
+    body = "## Result\n\nTODO may placeholder\n\nThis is fine."
+    report = run_preflight(_payload(body, abstract="Plain abstract."))
+    assert report["safe_fixes_applied"] == []
+    assert "TODO may placeholder" in report["cleaned_body_markdown"]
+    assert "cleaning_reverted" in _advisory_codes(report)
+    assert "missing_narrow_signal_caveat" in _advisory_codes(report)
+
+
 def test_cli_writes_report_and_clean_payload(tmp_path: Path) -> None:
     src = tmp_path / "input.json"
     report = tmp_path / "report.json"

@@ -13,7 +13,7 @@ from typing import Any
 Json = dict[str, Any]
 Reviewer = Callable[[Json], Json]
 
-DOI_RE = re.compile(r"\b10\.\d{4,9}/(?:[-._;/:A-Z0-9]+|\([-._;/:A-Z0-9]+\))+", re.I)
+DOI_RE = re.compile(r"\b10\.\d{4,9}/[^\s\]}>,;]+", re.I)
 PMID_RE = re.compile(r"\bPMID[:\s#-]*(\d{4,12})\b", re.I)
 NUMBER_RE = re.compile(r"(?<![A-Za-z])\d+(?:\.\d+)?%?")
 DEBUG_RE = re.compile(
@@ -285,7 +285,10 @@ def _positive_signal(text: str) -> re.Match[str] | None:
 
 
 def _clean_doi(value: str) -> str:
-    return value.strip().rstrip(".,;").lower()
+    value = value.strip().rstrip(".,;").lower()
+    while value.endswith(")") and value.count(")") > value.count("("):
+        value = value[:-1].rstrip(".,;")
+    return value
 
 
 def _reason(code: str, severity: str, message: str) -> Json:

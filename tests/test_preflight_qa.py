@@ -70,7 +70,7 @@ def test_missing_doi_is_advisory_only() -> None:
 
 
 def test_parenthesized_dois_keep_full_identity() -> None:
-    dois = ["10.1016/s0140-6736(24)01498-3", "10.1016/s0140-6736(25)01375-3"]
+    dois = ["10.1016/s0140-6736(24)01498-3", "10.1016/s0140-6736(25)01375-3", "10.9999/abc+other(end)"]
     for template in ("DOI: {}.", "https://doi.org/{}", "[source](https://doi.org/{})", "[exact source: https://doi.org/{}]"):
         body = " ".join(template.format(doi) for doi in dois)
         payload = _payload(body, sources=[{"doi": doi} for doi in dois])
@@ -82,7 +82,9 @@ def test_parenthesized_dois_keep_full_identity() -> None:
         report = run_preflight(payload)
         missing = [a for a in report["advisories"] if a["code"] == "doi_not_in_source_bundle"]
         assert len(missing) == 1 and missing[0]["severity"] == "critical"
-        assert missing[0]["message"].endswith(dois[1])
+        assert missing[0]["message"].endswith(dois[-1])
+    report = run_preflight(_payload("DOI 10.1000/abc+other."))
+    assert any(a["code"] == "doi_not_in_source_bundle" and a["message"].endswith("10.1000/abc+other") for a in report["advisories"])
 
 
 def test_positive_abstract_over_null_evidence_is_advisory_not_block() -> None:

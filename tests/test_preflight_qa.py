@@ -69,6 +69,22 @@ def test_missing_doi_is_advisory_only() -> None:
     assert report["cleaned_payload"] is not None
 
 
+def test_parenthesized_dois_keep_full_identity() -> None:
+    dois = ["10.1016/s0140-6736(24)01498-3", "10.1016/s0140-6736(25)01375-3"]
+    for template in ("DOI: {}.", "https://doi.org/{}", "[source](https://doi.org/{})", "[exact source: https://doi.org/{}]"):
+        body = " ".join(template.format(doi) for doi in dois)
+        payload = _payload(body, sources=[{"doi": doi} for doi in dois])
+        report = run_preflight(payload)
+        assert "doi_not_in_source_bundle" not in _advisory_codes(report)
+        assert report["cleaned_body_markdown"] == body
+        assert core._citations({"body_markdown": body, "abstract": ""}) == dois
+        payload["source_bundle"].pop()
+        report = run_preflight(payload)
+        missing = [a for a in report["advisories"] if a["code"] == "doi_not_in_source_bundle"]
+        assert len(missing) == 1 and missing[0]["severity"] == "critical"
+        assert missing[0]["message"].endswith(dois[1])
+
+
 def test_positive_abstract_over_null_evidence_is_advisory_not_block() -> None:
     report = run_preflight(_payload(
         "## Result\n\nThe claim is supported.",

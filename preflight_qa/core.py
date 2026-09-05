@@ -13,7 +13,7 @@ from typing import Any
 Json = dict[str, Any]
 Reviewer = Callable[[Json], Json]
 
-DOI_RE = re.compile(r"\b10\.\d{4,9}/[^\s\])}>,;]+", re.I)
+DOI_RE = re.compile(r"\b10\.\d{4,9}/(?:[-._;/:A-Z0-9]+|\([-._;/:A-Z0-9]+\))+", re.I)
 PMID_RE = re.compile(r"\bPMID[:\s#-]*(\d{4,12})\b", re.I)
 NUMBER_RE = re.compile(r"(?<![A-Za-z])\d+(?:\.\d+)?%?")
 DEBUG_RE = re.compile(

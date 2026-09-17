@@ -99,13 +99,21 @@ def run_preflight(payload: Json, *, use_m3: bool = False, reviewer: Reviewer | N
         elif status_value not in {"pass", "skipped"}:
             advisories.append(_reason("m3_uncertain", "minor", "M3 did not return a pass verdict."))
 
+    # Honest status: the tool itself never blocks a submission, but it must
+    # not report "pass" while carrying critical findings. Consumers in shadow
+    # mode ignore status; enforce-mode consumers act on it.
+    critical = [str(row["code"]) for row in advisories if row.get("severity") == "critical"]
     report: Json = {
-        "status": "pass",
-        "qa_version": "preflight-v2",
+        "status": "blocked" if critical else "pass",
+        "qa_version": "preflight-v3",
         "input_hash": _hash_json(payload),
         "cleaned_hash": _hash_json(cleaned),
+        # cleaned_payload is canonical: every fix is invariant-checked and any
+        # fix that would alter protected content has already been reverted
+        # above, so the cleaned package is always safe to submit as-is.
+        "cleaned_is_canonical": True,
         "safe_fixes_applied": fixes,
-        "blocked_reasons": [],
+        "blocked_reasons": critical,
         "advisories": advisories,
         "m3_result": m3_result,
         "invariant_result": invariant,

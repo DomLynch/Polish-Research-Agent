@@ -61,10 +61,12 @@ def test_duplicate_paragraph_with_number_is_cleaned_without_blocking() -> None:
     assert report["cleaned_body_markdown"].count("Effect was 5% lower.") == 1
 
 
-def test_missing_doi_is_advisory_only() -> None:
+def test_missing_doi_reports_blocked_status_honestly() -> None:
+    # The tool never refuses to run or to hand back a cleaned payload, but a
+    # critical finding must not be reported as "pass" for the caller to override.
     report = run_preflight(_payload("This may cite DOI 10.9999/missing."))
-    assert report["status"] == "pass"
-    assert report["blocked_reasons"] == []
+    assert report["status"] == "blocked"
+    assert report["blocked_reasons"] == ["doi_not_in_source_bundle"]
     assert "doi_not_in_source_bundle" in _advisory_codes(report)
     assert report["cleaned_payload"] is not None
 
@@ -87,14 +89,14 @@ def test_parenthesized_dois_keep_full_identity() -> None:
     assert any(a["code"] == "doi_not_in_source_bundle" and a["message"].endswith("10.1000/abc+other") for a in report["advisories"])
 
 
-def test_positive_abstract_over_null_evidence_is_advisory_not_block() -> None:
+def test_positive_abstract_over_null_evidence_is_critical_and_blocked() -> None:
     report = run_preflight(_payload(
         "## Result\n\nThe claim is supported.",
         abstract="The evidence shows strong positive benefit.",
         sources=[{"title": "Null trial", "excerpt": "no effect and not significant"}],
     ))
-    assert report["status"] == "pass"
-    assert report["blocked_reasons"] == []
+    assert report["status"] == "blocked"
+    assert report["blocked_reasons"] == ["abstract_results_direction_mismatch"]
     assert "abstract_results_direction_mismatch" in _advisory_codes(report)
 
 
@@ -413,3 +415,31 @@ def test_emit_metrics_writes_jsonl_and_stderr(tmp_path: Path, monkeypatch, capsy
     assert record["advisories"] == ["doi_not_in_source_bundle"]
     assert record["fixes"] == ["repair_sentence_spacing"]
     assert "preflight_qa " in capsys.readouterr().err
+
+
+def test_non_critical_findings_still_pass_and_cleaned_payload_is_canonical() -> None:
+    # Major/minor advisories never flip status; only critical does. And the
+    # cleaned payload is declared canonical: safe to submit as-is, because any
+    # fix that would touch protected content was already reverted.
+    report = run_preflight(_payload(
+        "## Result\n\nThe claim is supported.",
+        abstract="Strong positive benefit.",
+        sources=[{"title": "Trial", "doi": "10.1000/abc", "excerpt": "strong benefit", "direction": "positive"}],
+    ))
+    assert report["status"] == "pass"
+    assert report["blocked_reasons"] == []
+    assert report["cleaned_is_canonical"] is True
+    assert "add_narrow_signal_caveat" in report["safe_fixes_applied"]
+    assert report["cleaned_hash"] != report["input_hash"]  # a real fix, and still canonical
+
+
+def test_cli_exit_code_reflects_honest_status(tmp_path: Path) -> None:
+    src = tmp_path / "in.json"
+    src.write_text(json.dumps(_payload("Cites DOI 10.9999/ghost.")), encoding="utf-8")
+    proc = subprocess.run(
+        [sys.executable, "-m", "preflight_qa", "check", "--input", str(src),
+         "--out", str(tmp_path / "r.json"), "--clean-out", str(tmp_path / "c.json")],
+        capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[1]),
+    )
+    assert proc.returncode == 2, proc.stderr
+    assert json.loads((tmp_path / "r.json").read_text())["status"] == "blocked"

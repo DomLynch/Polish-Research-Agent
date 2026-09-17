@@ -13,7 +13,28 @@ python -m preflight_qa check --input payload.json --out report.json --clean-out 
 ```
 
 Exit codes:
-- `0`: always (advisory-only; findings are in the report's `advisories`)
+- `0`: `status: pass` — no critical findings.
+- `2`: `status: blocked` — at least one critical finding; codes are in `blocked_reasons`.
+
+## Report contract
+
+The tool itself never refuses to run and never blocks a submission — what a
+caller does with the report is the caller's policy (shadow mode ignores
+`status`; enforce mode acts on it). The report is honest about what it found:
+
+- `status` is `blocked` iff any advisory has `severity: critical`; otherwise
+  `pass`. Major and minor advisories never change `status`.
+- `blocked_reasons` lists the critical codes (empty on `pass`).
+- **`cleaned_payload` is canonical.** Every fix is invariant-checked
+  (numbers, citations, title, source count, and existing hedges are
+  preserved); a fix that would alter protected content is reverted before
+  the report is written and recorded as a `cleaning_reverted` advisory. So
+  the cleaned package is always safe to submit as-is — callers should
+  submit `cleaned_payload`, not the input, and must not treat
+  `cleaned_hash != input_hash` as a reason to hold. `cleaned_is_canonical`
+  is emitted as an explicit `true` to make this contract machine-visible.
+- `safe_fixes_applied` names what changed; `invariant_result` shows the
+  check that licensed it.
 
 Optional MiniMax-M3 semantic review:
 

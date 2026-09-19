@@ -443,3 +443,14 @@ def test_cli_exit_code_reflects_honest_status(tmp_path: Path) -> None:
     )
     assert proc.returncode == 2, proc.stderr
     assert json.loads((tmp_path / "r.json").read_text())["status"] == "blocked"
+
+
+def test_cleaner_preserves_scientific_and_citation_tokens_everywhere() -> None:
+    text = "Limited p.V42L c.123A>T NP_001.2 https://example.org/Study DOI 10.1000/a.Beta e.GFP."
+    payload = _payload(text, abstract=text, sources=[{"title": text, "doi": "10.1000/a.Beta"}])
+    payload["sections"] = {"Results": text, "References": text}
+    report = run_preflight(payload)
+    assert report["status"] == "pass"
+    assert report["cleaned_payload"] == payload
+    assert report["input_hash"] == report["cleaned_hash"]
+    assert report["safe_fixes_applied"] == []

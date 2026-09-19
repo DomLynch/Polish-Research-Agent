@@ -1,6 +1,10 @@
 # Polish Research Agent Handover
 
-Last updated: 2026-06-10 19:55 +04
+Last updated: 2026-09-19
+
+## September 19 identifier-preservation repair
+Removed the case-based sentence-spacing substitution: it altered valid scientific tokens such as `p.V42L` inside references and manuscript text. Dot/capital patterns are ambiguous and remain untouched; whitespace cleanup and deterministic scientific checks still run. Regression verifies identifiers, URLs, DOI, all manuscript fields and exact payload hash preservation. Full suite: 29 passed; ruff and mypy pass. Producer must still re-review any other proposed changed package before submission.
+
 
 ## Canonical Repo
 

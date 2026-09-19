@@ -178,10 +178,9 @@ def _clean_markdown(text: str, fixes: list[str]) -> str:
         deduped.append(para)
         last = norm
     cleaned = "\n\n".join(deduped)
-    repaired = re.sub(r"([a-z\)])\.([A-Z])", r"\1. \2", cleaned)
-    if repaired != cleaned:
-        _add_fix(fixes, "repair_sentence_spacing")
-    return repaired.strip()
+    # A dot inside a token may be a variant, URL, abbreviation or source title.
+    # Sentence boundaries cannot be inferred safely from letter casing alone.
+    return cleaned.strip()
 
 
 def _deterministic_blocks(c: Json) -> list[Json]:
